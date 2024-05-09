@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include "tokenizer.h"
+#include "subjects.h"
 
 typedef enum
 {

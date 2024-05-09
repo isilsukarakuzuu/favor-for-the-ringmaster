@@ -133,13 +133,13 @@ bool contains_invalid_token(token *tokens)
 
 token *tokenize(char *input)
 {
-  token *tokens = malloc(MAX * sizeof(token));
+  token *tokens = malloc(MAX / 2 * sizeof(token));
 
   int i = 0;
   int token_index = 0;
   while (input[i] != '\0')
   {
-    char word[MAX];
+    char word[MAX_WORD_LENGTH];
     int j = 0;
     while (input[i] != ' ' && input[i] != '\0')
     {

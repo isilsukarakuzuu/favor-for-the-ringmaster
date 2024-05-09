@@ -43,11 +43,11 @@ void print_sentence(sentence *sentences)
 void init_sentence(sentence *sentence, sentence_type type)
 {
   sentence->type = type;
-  sentence->subjects = malloc(MAX * sizeof(token));
-  sentence->verbs = malloc(MAX * sizeof(token));
-  sentence->items = malloc(MAX * sizeof(token));
-  sentence->to_from = malloc(MAX * sizeof(token));
-  sentence->location = malloc(MAX * sizeof(token));
+  sentence->subjects = malloc(MAX_SUBJECTS * sizeof(token));
+  sentence->verbs = malloc(5 * sizeof(token));
+  sentence->items = malloc(MAX_ITEMS * sizeof(token));
+  sentence->to_from = malloc(5 * sizeof(token));
+  sentence->location = malloc(5 * sizeof(token));
 
   sentence->subjects[0].type = END;
   sentence->verbs[0].type = END;
@@ -146,7 +146,7 @@ token *parse_action(token *current_token, sentence *current_sentence)
       to_from_array_token++;
     }
   }
-  else if (current_token->type == GO && (current_token + 1)->type == TO)
+  else if (current_token->type == GO && (current_token + 1)->type == TO && (current_token + 2)->type == ENTITIY)
   {
     *verb_array_token = *current_token;
     current_token++;
@@ -234,9 +234,65 @@ token *parse_condition(token *current_token, sentence *current_sentence)
   return current_token;
 }
 
+bool check_duplicates(sentence *sentences)
+{
+  // check for duplicate names in subjects
+  int i = 0;
+  while (sentences[i].type != END_SENTENCE)
+  {
+    int j = 0;
+    while (sentences[i].subjects[j].type != END)
+    {
+      int k = j + 1;
+      while (sentences[i].subjects[k].type != END)
+      {
+        if (strcmp(sentences[i].subjects[j].value, sentences[i].subjects[k].value) == 0)
+        {
+          return true;
+        }
+        k++;
+      }
+      j++;
+    }
+
+    // check for duplicate names in to_from and subjects
+    j = 0;
+    while (sentences[i].to_from[j].type != END)
+    {
+      int k = 0;
+      while (sentences[i].subjects[k].type != END)
+      {
+        if (strcmp(sentences[i].to_from[j].value, sentences[i].subjects[k].value) == 0)
+        {
+          return true;
+        }
+        k++;
+      }
+      j++;
+    }
+    // check for duplicate items
+    j = 1;
+    while (sentences[i].items[j - 1].type != END && sentences[i].items[j].type != END)
+    {
+      int k = j + 2;
+      while (sentences[i].items[k - 1].type != END && sentences[i].items[k].type != END)
+      {
+        if (strcmp(sentences[i].items[j].value, sentences[i].items[k].value) == 0)
+        {
+          return true;
+        }
+        k += 2;
+      }
+      j += 2;
+    }
+    i++;
+  }
+  return false;
+}
+
 sentence *parse_sentence(token *tokens)
 {
-  sentence *sentences = malloc(MAX * sizeof(sentence));
+  sentence *sentences = malloc(MAX/8 * sizeof(sentence));
   sentence *current_sentence = &sentences[0];
   token *current_token = &tokens[0];
 
@@ -288,25 +344,112 @@ sentence *parse_sentence(token *tokens)
     }
   }
   current_sentence->type = END_SENTENCE;
+  if (check_duplicates(sentences))
+  {
+    return NULL;
+  }
   return sentences;
 }
 
 char *parse_question(token *tokens)
 {
+  char *question = calloc(MAX, sizeof(char));
   if (tokens[0].type == WHO && tokens[1].type == AT && tokens[2].type == ENTITIY && tokens[3].type == QUESTION_MARK && tokens[4].type == END)
   {
-    return tokens[2].value;
+    // iterate through subjects and find the ones with the location
+    int i = 0;
+    while (subjects[i].name[0] != '\0')
+    {
+      if (strcmp(subjects[i].location, tokens[2].value) == 0)
+      {
+        strcat(question, subjects[i].name);
+        strcat(question, " and ");
+      }
+      i++;
+    }
+    // remove the last " and "
+    question[strlen(question) - 5] = '\0';
+    if (strlen(question) == 0)
+    {
+      return "NOBODY";
+    }
+    return question;
   }
+
   if (tokens[0].type == ENTITIY && tokens[1].type == WHERE && tokens[2].type == QUESTION_MARK && tokens[3].type == END)
   {
-    return tokens[0].value;
+    // find token[0].value in subjects and return the location, if not found return "NOWHERE"
+    int ind = find_subject(tokens[0].value);
+    if (ind == -1)
+    {
+      return "NOWHERE";
+    }
+    if (strcmp(subjects[ind].location, "") == 0)
+    {
+      return "NOWHERE";
+    }
+    return subjects[ind].location;
   }
   token *current_token = &tokens[0];
-  token *subject_array_token = malloc(MAX * sizeof(token));
+  token *subject_array_token = malloc(MAX_SUBJECTS * sizeof(token));
   current_token = parse_subjects(current_token, subject_array_token);
   if (current_token != NULL && (current_token)->type == TOTAL && (current_token + 1)->type == ENTITIY && (current_token + 2)->type == QUESTION_MARK && (current_token + 3)->type == END)
   {
-    return (current_token + 2)->value;
+    int ans = 0;
+    // iterate through subject array token and find the one with the name and return the total quantity
+    int i = 0;
+    while (subject_array_token[i].type != END)
+    {
+      int ind = find_subject(subject_array_token[i].value);
+      if (ind != -1)
+      {
+        int item_index = find_item((current_token + 1)->value, subjects[ind].current_items);
+        if (item_index != -1)
+        {
+          ans += subjects[ind].current_items[item_index].quantity;
+        }
+      }
+      i++;
+    }
+    // convert ans to string
+    sprintf(question, "%d", ans);
+    return question;
+  }
+  if (current_token != NULL && (current_token)->type == TOTAL && (current_token + 1)->type == QUESTION_MARK && (current_token + 2)->type == END)
+  {
+    // if more than 1 subject, return null
+    int i = 0;
+    while (subject_array_token[i].type != END)
+    {
+      i++;
+    }
+    if (i > 1)
+    {
+      return NULL;
+    }
+    int ind = find_subject(subject_array_token[0].value);
+    if (ind == -1)
+    {
+      return "NOTHING";
+    }
+    // print all items and their quantities without 0 quantities with " and " in between
+    int j = 0;
+    while (subjects[ind].current_items[j].name[0] != '\0')
+    {
+      if (subjects[ind].current_items[j].quantity != 0)
+      {
+        // first quantity then item name
+        sprintf(question, "%s and %d %s", question, subjects[ind].current_items[j].quantity, subjects[ind].current_items[j].name);
+      }
+      j++;
+    }
+    // remove the first " and "
+    question += 5;
+    if (strlen(question) == 0)
+    {
+      return "NOTHING";
+    }
+    return question;
   }
   return NULL;
 }

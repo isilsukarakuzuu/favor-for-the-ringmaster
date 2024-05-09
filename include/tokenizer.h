@@ -7,6 +7,9 @@
 #include <string.h>
 
 #define MAX 1024
+#define MAX_SUBJECTS 300
+#define MAX_ITEMS 50
+#define MAX_WORD_LENGTH 20
 
 typedef enum
 {
